@@ -1,0 +1,353 @@
+<!-- templates/match_detail.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PUBG Match Detail</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        #map-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #ededed;
+            padding: 0;
+            width: 100%;
+            min-height: 600px;
+            max-height: 80vh;
+        }
+        #mapid {
+            box-shadow: 0 2px 16px #0004;
+            background: #222;
+            width: 100%;
+            height: 600px;
+            max-width: 800px;
+            max-height: 800px;
+            margin: 0 auto;
+            border-radius: 4px;
+        }
+        @media (max-width: 900px) {
+            #mapid, #map-wrapper {
+                max-width: 100vw !important;
+                height: 60vw !important;
+                min-height: 320px !important;
+            }
+        }
+    </style>
+</head>
+
+<body style="background: #f6f8fb; color: #222; min-height: 100vh; font-family: 'Segoe UI', 'Prompt', 'Kanit', sans-serif;">
+<div class="header-bar" style="background: #36aaff; color: #fff; font-weight: bold; font-size: 1.2em; padding: 14px 24px; margin-bottom: 32px; letter-spacing: 1px; border-radius: 0 0 18px 18px; box-shadow: 0 2px 12px #36aaff22;">
+    <a href="/" class="btn btn-light" style="float:left; border-radius:24px; font-weight:bold; box-shadow:0 2px 8px #36aaff22; margin-right:18px;">← Back</a>
+    <span style="font-size:1.3em;vertical-align:middle;">PUBG Match Detail</span>
+    <span style="float:right;font-size:1.5em;vertical-align:middle;">🏆</span>
+</div>
+<div style="width:100vw;max-width:100%;position:fixed;top:0;left:0;z-index:-1;">
+    <svg width="100%" height="180" viewBox="0 0 1440 180" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block;">
+        <path d="M0,80 C480,180 960,0 1440,100 L1440,0 L0,0 Z" fill="#36aaff22"/>
+    </svg>
+</div>
+<div class="main-wrap" style="max-width: 700px; margin: 40px auto 0 auto; background: #fff; border-radius: 18px; box-shadow: 0 4px 32px #36aaff22; padding: 32px 24px 24px 24px;">
+    <h2 id="matchTitle" class="text-center mb-4" style="font-size:2em;font-weight:bold;color:#36aaff;"></h2>
+    <ul class="nav nav-tabs justify-content-center" id="detailTabs">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#performance">Performance</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#team">Team Stats</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#kill">Kill Logs</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#map">Map</a></li>
+    </ul>
+    <div class="tab-content mt-4">
+        <div class="tab-pane fade show active" id="performance"></div>
+        <div class="tab-pane fade" id="team"></div>
+        <div class="tab-pane fade" id="kill"></div>
+        <div class="tab-pane fade" id="map">
+            <div id="map-wrapper" style="display: flex; justify-content: center; align-items: center; background: transparent; padding: 0; width: 100%; min-height: 0; max-height: none; border-radius: 0; box-shadow: none;">
+                <div id="mapid" style="background: #222; width: 400px; height: 400px; max-width: 400px; max-height: 400px; margin: 0 auto; border-radius: 8px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const match_id = "{{ match_id }}";
+    let matchData = null;
+    let mapRendered = false;
+
+    fetch('/api/match/' + match_id)
+        .then(res => res.json())
+        .then(data => {
+            matchData = data;
+            renderMatchDetail(data);
+        });
+
+    document.querySelector('a[href="#map"]').addEventListener('shown.bs.tab', function (e) {
+        if (!mapRendered && matchData) {
+            showMapWithEvents(matchData);
+            mapRendered = true;
+        }
+    });
+
+    function renderMatchDetail(data) {
+        const map = data.data.attributes.mapName;
+        const mode = data.data.attributes.gameMode;
+        const created = data.data.attributes.createdAt;
+        // เปลี่ยนหัวข้อ ไม่แสดง Match ID
+        document.getElementById('matchTitle').innerText = `${map} - ${mode.charAt(0).toUpperCase() + mode.slice(1)}`;
+
+        // Tab Performance (แบ่งเป็น Rating/Ranks, Combat, Gameplay)
+        let player = null;
+        for (const p of data.included) {
+            if (p.type === "participant" && p.attributes.stats.name) {
+                player = p;
+                break;
+            }
+        }
+        let stats = player ? player.attributes.stats : {};
+        // Card UI
+        document.getElementById('performance').innerHTML = `
+        <div class="card shadow-lg w-100 mx-auto" style="max-width:600px;background:linear-gradient(135deg,#eaf3fb 80%,#f6f8fb 100%);color:#222;">
+            <div class="card-header text-center" style="background:linear-gradient(90deg,#36aaff 0%,#007bff 100%);color:#fff;font-size:1.3em;font-weight:bold;letter-spacing:1px;">
+                Match Performance
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-6 text-end"><b>Map:</b></div>
+                    <div class="col-6 text-start">${map}</div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-6 text-end"><b>Game Mode:</b></div>
+                    <div class="col-6 text-start">${mode}</div>
+                </div>
+                <div class="row mb-4">
+                    <div class="col-6 text-end"><b>Created:</b></div>
+                    <div class="col-6 text-start">${new Date(created).toLocaleString()}</div>
+                </div>
+                <div class="row mb-4">
+                    <div class="col-12 text-center">
+                        <span style="font-size:2.5em;font-weight:bold;color:#ffd700;">#${stats.winPlace || '-'} </span>
+                        <span style="font-size:1.1em;">Rank in Match</span>
+                    </div>
+                </div>
+        <div class="row mb-4">
+            <div class="col-6 text-center">
+                <div style="font-size:2em;font-weight:bold;color:#dc3545;">🔫 ${stats.kills || 0}</div>
+                <div style="font-size:1.1em;">Kills</div>
+            </div>
+            <div class="col-6 text-center">
+                <div style="font-size:2em;font-weight:bold;color:#36aaff;">💥 ${(typeof stats.damageDealt === 'number' ? stats.damageDealt.toFixed(2) : stats.damageDealt || 0)}</div>
+                <div style="font-size:1.1em;">Damage</div>
+            </div>
+        </div>
+                <div class="row mb-2">
+                    <div class="col-6 text-end"><b>DBNOs:</b></div>
+                    <div class="col-6 text-start">${stats.DBNOs || 0}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-6 text-end"><b>Assists:</b></div>
+                    <div class="col-6 text-start">${stats.assists || 0}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-6 text-end"><b>Headshots:</b></div>
+                    <div class="col-6 text-start">${stats.headshotKills || 0}</div>
+                </div>
+                <hr style="border-color:#36aaff;">
+                <div class="row mb-2">
+                    <div class="col-6 text-end"><b>Survival Time:</b></div>
+                    <div class="col-6 text-start">${Math.round((stats.timeSurvived||0)/60)} min</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-6 text-end"><b>Distance Traveled:</b></div>
+                    <div class="col-6 text-start">${((stats.walkDistance||0)+(stats.rideDistance||0)+(stats.swimDistance||0)).toFixed(2)} m</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-6 text-end"><b>Revives:</b></div>
+                    <div class="col-6 text-start">${stats.revives || 0}</div>
+                </div>
+                <div class="row mb-2">
+                    <div class="col-6 text-end"><b>Heals:</b></div>
+                    <div class="col-6 text-start">${stats.heals || 0}</div>
+                </div>
+                <div class="row">
+                    <div class="col-6 text-end"><b>Boosts:</b></div>
+                    <div class="col-6 text-start">${stats.boosts || 0}</div>
+                </div>
+            </div>
+        </div>
+        `;
+
+        // Tab Team Stats
+        let teams = [];
+        data.included.forEach(obj => {
+            if (obj.type === "roster") {
+                teams.push(obj);
+            }
+        });
+        let html_team = '';
+        teams.forEach(team => {
+            html_team += `
+            <div class="card shadow-sm mb-4" style="background:linear-gradient(135deg,#eaf3fb 80%,#f6f8fb 100%);border-radius:14px;">
+                <div class="card-header" style="background:linear-gradient(90deg,#36aaff 0%,#007bff 100%);color:#fff;font-weight:bold;font-size:1.15em;letter-spacing:1px;border-radius:14px 14px 0 0;">
+                    🧑‍🤝‍🧑 Team #${team.attributes.stats.rank}
+                </div>
+                <div class="card-body p-3">
+                    <div class="row">
+                        <div class="col-12">
+                            <ul class="list-unstyled mb-0">
+                                ${team.relationships.participants.data.map(pm => {
+                                    let pdata = data.included.find(o => o.type=="participant" && o.id==pm.id);
+                                    if (pdata) {
+                                        let s = pdata.attributes.stats;
+                                        return `<li class="mb-2">
+                                            <span style="font-size:1.08em;font-weight:bold;color:#222;">${s.name}</span>
+                                            <span style="margin-left:10px;color:#222;font-weight:500;">🔫 ${s.kills} Kills</span>
+                                            <span style="margin-left:10px;color:#36aaff;font-weight:500;">💥 ${(typeof s.damageDealt === 'number' ? s.damageDealt.toFixed(2) : s.damageDealt)} Damage</span>
+                                        </li>`;
+                                    }
+                                    return '';
+                                }).join('')}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            `;
+        });
+        document.getElementById('team').innerHTML = html_team;
+
+        // Tab Kill Logs
+        let kills = [];
+        data.included.forEach(obj => {
+            if (obj.type === "participant" && obj.attributes.stats.kills > 0) {
+                kills.push(obj.attributes.stats);
+            }
+        });
+        let html_kill = `<div class="card shadow-sm w-100 mx-auto" style="max-width:600px;background:linear-gradient(135deg,#eaf3fb 80%,#f6f8fb 100%);color:#222;border-radius:14px;">
+            <div class="card-header text-center" style="background:linear-gradient(90deg,#36aaff 0%,#007bff 100%);color:#fff;font-size:1.15em;font-weight:bold;letter-spacing:1px;border-radius:14px 14px 0 0;">
+                🔫 Kill Logs
+            </div>
+            <div class="card-body p-3">
+                <ul class="list-unstyled mb-0">
+                    ${kills.map(k => `
+                        <li class="mb-3" style="border-bottom:1px solid #eaf3fb;padding-bottom:8px;">
+                            <div class="row align-items-center">
+                                <div class="col-5" style="font-size:1.08em;font-weight:bold;color:#222;">${k.name}</div>
+                                <div class="col-3 text-center" style="font-size:1.15em;color:#dc3545;font-weight:bold;">🔫 ${k.kills}</div>
+                                <div class="col-4 text-end" style="font-size:1.15em;color:#36aaff;font-weight:bold;">💥 ${(typeof k.damageDealt === 'number' ? k.damageDealt.toFixed(2) : k.damageDealt)}</div>
+                            </div>
+                        </li>
+                    `).join('')}
+                </ul>
+            </div>
+        </div>`;
+        document.getElementById('kill').innerHTML = html_kill;
+    }
+
+    function showMapWithEvents(data) {
+
+        const mapName = data.data.attributes.mapName.toLowerCase();
+        const mapConfigs = {
+            "taego":    {img: "/static/map/taego.png"},
+            "tiger_main": {img: "/static/map/taego.png"},
+            "erangel":  {img: "/static/map/erangel.png"},
+            "miramar":  {img: "/static/map/miramar.png"},
+            "sanhok":   {img: "/static/map/sanhok.png"},
+            "vikendi":  {img: "/static/map/vikendi.png"},
+            "deston":   {img: "/static/map/deston.png"}
+        };
+        const config = mapConfigs[mapName] || mapConfigs["erangel"];
+        const mapSize = 400;
+
+        let mapidDiv = document.getElementById('mapid');
+        let wrap = document.getElementById('map-wrapper');
+        mapidDiv.style.width = mapSize + "px";
+        mapidDiv.style.height = mapSize + "px";
+        wrap.style.maxWidth = mapSize + "px";
+        wrap.style.maxHeight = mapSize + "px";
+        mapidDiv.style.maxWidth = "100%";
+        mapidDiv.style.maxHeight = "100%";
+
+        if (window.__leafletMap) { window.__leafletMap.remove(); }
+
+        const map = L.map('mapid', {
+            crs: L.CRS.Simple,
+            minZoom: 0,
+            maxZoom: 2,
+            zoomSnap: 0.25,
+            zoomDelta: 0.25,
+            maxBounds: [[0,0], [mapSize, mapSize]],
+            maxBoundsViscosity: 1.0,
+            dragging: true
+        });
+        window.__leafletMap = map;
+        const bounds = [[0,0], [mapSize, mapSize]];
+        L.imageOverlay(config.img, bounds).addTo(map);
+        map.fitBounds(bounds);
+
+        // ---- ICON EMOJI เพิ่มตรงนี้ ----
+        // เลือก emoji แยกประเภท event (Death/Knockout/Kill/Revive)
+        function getEventEmoji(type) {
+            // เพิ่มเติม emoji อื่นๆ ได้เลย
+            if (!type) return "❔";
+            if (type.toLowerCase().includes("byplayer")) return "💀"; // ตาย
+            if (type.toLowerCase().includes("alive")) return "🦾";
+            if (type.toLowerCase().includes("knocked")) return "🤕"; // DBNO
+            if (type.toLowerCase().includes("bluezone")) return "💙";
+            if (type.toLowerCase().includes("redzone")) return "💥";
+            if (type.toLowerCase().includes("downbutnotout")) return "🤕";
+            // เพิ่ม type อื่นได้
+            return "❌";
+        }
+
+
+        // --- Find event positions ---
+        let events = [];
+        data.included.forEach(obj => {
+            if (obj.type === "participant" && obj.attributes.stats.deathType) {
+                let s = obj.attributes.stats;
+                if (s.killerPosition && s.killerPosition.length === 3) {
+                    events.push({
+                        name: s.name,
+                        type: s.deathType,
+                        pos: s.killerPosition,
+                        killedBy: s.killerName || null,
+                        weapon: s.killerWeapon || "-"
+                    });
+                }
+            }
+        });
+
+        // --- Add markers (with emoji in popup) ---
+        events.forEach(ev => {
+            const x = ev.pos[0] * (mapSize / 1024);
+            const y = mapSize - (ev.pos[1] * (mapSize / 1024));
+            // ใส่ emoji ใน popup พร้อมข้อมูลอาวุธ
+            L.marker([y, x])
+             .addTo(map)
+             .bindPopup(`
+                <span style="font-size:2em">${getEventEmoji(ev.type)}</span><br>
+                <b style="font-size:1.1em;color:#222;">${ev.name}</b><br>
+                <span style="color:#555;">DeathType: ${ev.type}</span><br>
+                ${ev.killedBy ? `<span style='color:#dc3545;'>By: ${ev.killedBy}</span><br>` : ""}
+                <span style='color:#007bff;'>Weapon: ${ev.weapon}</span>
+            `);
+        });
+
+        // ถ้าอยากใช้ custom icon ให้ uncomment ตัวอย่างด้านล่างนี้
+        /*
+        let deathIcon = L.divIcon({
+            className: "",
+            html: '<span style="font-size:2em;">💀</span>',
+            iconSize: [32,32],
+            iconAnchor: [16,16]
+        });
+        L.marker([y, x], {icon: deathIcon}).addTo(map);
+        */
+    }
+});
+</script>
+</body>
+</html>

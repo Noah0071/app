@@ -1,0 +1,11 @@
+body {
+    background: #1a1e2b;
+    color: #f4f6fb;
+}
+.table, .form-control, .btn, .nav-link {
+    border-radius: 8px !important;
+}
+.nav-tabs .nav-link.active {
+    background: #007bff;
+    color: #fff !important;
+}
